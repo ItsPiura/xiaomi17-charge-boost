@@ -3,7 +3,7 @@
 MODDIR=${0%/*}; T=$MODDIR/cc.sh
 D=/data/adb/mi_charge_boost; CONF=$D/cc; LOG=$D/cc.log
 until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 3; done
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
 N=/sys/class/xm_power/charger/charger_thermal/wired_chg_curr
 [ -f $N ] || N=$(find -L /sys/class/xm_power -maxdepth 4 -name wired_chg_curr -type f 2>/dev/null | head -1)
 # 本机没有 MCA 温控电流节点（非小米 MCA 机型/内核不同）：守护不运行，WebUI 显示不支持

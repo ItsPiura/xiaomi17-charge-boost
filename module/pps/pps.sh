@@ -17,7 +17,7 @@ USB=$S0/sys/class/power_supply/usb
 node(){ for n in $PV $PV2; do [ -f $n ] && { echo $n; return; }; done; }
 fp(){ [ -d $MODS/FreePPS ] && [ ! -f $MODS/FreePPS/disable ] && [ ! -f $MODS/FreePPS/remove ]; }
 online(){ cat $USB/online 2>/dev/null || echo 0; }
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 300 ] && sed -i '1,150d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 300 ] && sed -i '1,150d' $LOG; }
 running(){ [ -f $D/pps.pid ] && kill -0 $(cat $D/pps.pid) 2>/dev/null; }
 head_name(){ case "$1" in 0000) echo "公版 PPS（SVID 0000）";; 2717) X=$(cat $PMAX 2>/dev/null); case "$X" in ""|0|*[!0-9]*) echo "小米原装（私有协议）";; *) echo "小米原装（私有协议 ${X}W）";; esac;; ""|-) echo "--";; *) echo "其它（SVID $1）";; esac; }
 case "$1" in
@@ -50,7 +50,7 @@ burst) # 仅 shell 兜底用：与 FreePPS broadcast_forger 相同的金标动�
   /system/bin/am broadcast -p com.android.systemui -a miui.intent.action.ACTION_SOC_DECIMAL --ei miui.intent.extra.soc_decimal 0 --ei miui.intent.extra.soc_decimal_rate 0 >/dev/null 2>&1; sleep 0.1
   b 4; sleep 0.25; b 4; sleep 0.4; b 4; log "金标动画 ${P}W（shell）";;
 log) # 本模块记录 + FreePPS 自己的日志（logcat 抓取），按时间合并
-  { tail -n 40 $LOG 2>/dev/null
+  { grep '^[0-9][0-9]-[0-9][0-9] [0-9]' $LOG 2>/dev/null | tail -n 40
     for f in $D/freepps.log.1 $D/freepps.log; do [ -f $f ] && tail -n 60 $f; done | sed -n 's/^\([0-9][0-9]-[0-9][0-9] [0-9:]*\)\.[0-9]* [VDIWE]\/FreePPS *( *[0-9]*): /\1 [FreePPS] /p'
   } | sort -s -k1,2 | tail -n 40
   [ -s $LOG ] || [ -s $D/freepps.log ] || echo 暂无;;

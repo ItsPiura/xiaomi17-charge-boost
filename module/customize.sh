@@ -41,7 +41,7 @@ if [ "$KSU" = true ] && [ "$APATCH" != true ]; then
   SZ=$(unzip -l "$ZIPFILE" 2>/dev/null | tail -1 | awk '{printf "%.2f MB", $1/1000000}')
   SL=${SLOT:-$(getprop ro.boot.slot_suffix)}
   NM=$(grep_prop name $MODPATH/module.prop 2>/dev/null); [ -n "$NM" ] || NM=$MODNAME
-  AU=$(grep_prop author $MODPATH/module.prop 2>/dev/null); [ -n "$AU" ] || AU=酷安@鱼楠
+  AU=$(grep_prop author $MODPATH/module.prop 2>/dev/null); [ -n "$AU" ] || AU=酷安@不事Piura
   LOG=$(cat <<'EOF'
  _  __                    _ ____  _   _
 | |/ /___ _ __ _ __   ___| / ___|| | | |
@@ -113,7 +113,7 @@ menu(){
   SEL=$idx
 }
 out "********************"
-out " $MODNAME  by 酷安@鱼楠"
+out " $MODNAME  by 酷安@不事Piura"
 out "********************"
 { read -r SI_N; read -r SI_D; read -r SI_O; read -r SI_B; } <<EOF
 $(sh $MODPATH/sysinfo.sh)
@@ -158,15 +158,19 @@ menu $((S4+2)) "充电监测软件" "配合${MODNAME}使用的充电监测 App�
 CM=$SEL
 DR=0; DO=$D/dtbo.out; true > $DO 2>/dev/null || { DO=/dev/mcb_dtbo.out; true > $DO; }
 if [ "$DI$DT$DV$DZ" != "----" ]; then
-  chmod 755 $MODPATH/dtbo/dtbopatch
+  chmod 755 $MODPATH/dtbo/dtbopatch $MODPATH/dtbo/dtbopatch2 $MODPATH/dtbo/dtbofv 2>/dev/null
   sh $MODPATH/dtbo/apply.sh $DI $DV $DT $DZ > $DO 2>&1; DR=$?
   grep -q "^! " $DO && DR=1
+  # 记下失败原因，重启后模块列表里也能看到（v8.6.4-pudding2）
+  if [ "$DR" != 0 ]; then grep '^! ' $DO 2>/dev/null | tail -1 | sed 's/^! //' > $D/dtbo_fail 2>/dev/null
+  else rm -f $D/dtbo_fail 2>/dev/null; fi
 fi
 ui_print " "
 ui_print "======== 确认结果 ========"
 if [ "$DI$DT$DV$DZ" != "----" ]; then
   if [ $DR = 0 ]; then ui_print "✅ dtbo 刷入成功，重启生效"
-  else ui_print "❌ dtbo 刷入失败，分区未改动"; ui_print "   原因: $(grep '^! ' $DO | tail -1 | sed 's/^! //')"; fi
+  elif grep -q '回滚失败' $DO; then ui_print "❌ dtbo 写入失败且回滚失败，分区内容不确定"; ui_print "   请勿重启，先手动刷回原厂 dtbo"
+  else ui_print "❌ dtbo 刷入失败"; ui_print "   原因: $(grep '^! ' $DO | tail -1 | sed 's/^! //')"; fi
 fi
 f(){ [ "$1" = - ] && echo 不修改 || echo "$1$2"; }
 if true; then
@@ -203,6 +207,7 @@ fi
 set_perm_recursive $MODPATH 0 0 0755 0755
 ui_print "- 充电记录只在充电时写入，放电不记录"
 ui_print "- 重启后生效；不想重启可在 WebUI 设置里点启动"
+ui_print "- 原模块：酷安@鱼楠（小米/红米充电加速模块 v8.6.4）—— 本版为小米17 适配 fork"
 ui_print "- 致谢：酷安@低线阻狂魔、酷安@花橋桥（PPS 节点）"
 ui_print "        内置 FreePPS v1.7.0（Seyud / 酷安@瓦力喀，GPL-3.0，见 pps/README-FreePPS.txt）"
 ui_print "        酷安@久保Sama / 刷新率APP（高刷切换思路）"

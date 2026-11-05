@@ -4,7 +4,7 @@
 g(){ for p; do v=$(getprop $p); [ -n "$v" ] && { echo "$v"; return; }; done; }
 DEV=$(g ro.product.vendor.device ro.product.odm.device ro.product.device)
 # 已适配机型（dada / haotian / miro / annibale / warsaw）：任一 device 属性是已适配代号就以它为准，vendor/odm 优先（dtbo 跟底包走）
-SUP=" dada haotian miro annibale warsaw "
+SUP=" dada haotian miro annibale warsaw pudding "
 case "$SUP" in *" $DEV "*) ;; *) for p in ro.product.vendor.device ro.product.odm.device ro.product.device ro.product.system.device; do v=$(getprop $p); case "$SUP" in *" $v "*) DEV=$v; break;; esac; done;; esac
 # 机型名：vendor/odm 优先（移植包常把 system 的 ro.product.* 改成「Xiaomi for arm64」之类的通用值）
 bad(){ case "$1" in ""|*" for arm64"*|*" for arm"*|*[Gg]eneric*|*AOSP*|*aosp*|mainline*|qssi*) return 0;; esac; return 1; }
@@ -15,7 +15,7 @@ if [ -z "$NAME" ]; then
     v=$(grep -m1 -E '^ro\.product\.(vendor|odm)\.marketname=' $f 2>/dev/null | cut -d= -f2-); bad "$v" || { NAME=$v; break; }; done
 fi
 if [ -z "$NAME" ]; then case "$DEV" in
-  dada) NAME="Xiaomi 15";; haotian) NAME="Xiaomi 15 Pro";; miro) NAME="REDMI K80 Pro";; annibale) NAME="REDMI K90";; warsaw) NAME="REDMI K90 至尊版";;
+  dada) NAME="Xiaomi 15";; haotian) NAME="Xiaomi 15 Pro";; miro) NAME="REDMI K80 Pro";; annibale) NAME="REDMI K90";; warsaw) NAME="REDMI K90 至尊版";; pudding) NAME="Xiaomi 17";;
   *) NAME=$(gn ro.product.vendor.model ro.product.odm.model ro.product.model);; esac; fi
 OPL=$(getprop ro.build.version.oplusrom.display); [ -n "$OPL" ] || OPL=$(getprop ro.build.version.oplusrom)
 MI=$(g ro.mi.os.version.incremental)

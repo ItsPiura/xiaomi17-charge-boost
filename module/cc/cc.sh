@@ -6,19 +6,19 @@ CONF=$D/cc; LOG=$D/cc.log
 MIN=1000; REL=22000
 # 上限跟随 DTBO 已写入的快充电流（未修改/已还原按本机原厂值，小米15 15500）
 MCB_ROOT=$(cd ${0%/*}/.. && pwd); . $MCB_ROOT/models.sh 2>/dev/null; model_load "$(model_code)" >/dev/null 2>&1 || MI=15500
-dmax(){ S=$(getprop ro.boot.slot_suffix 2>/dev/null); x=/data/adb/mi_charge_boost/dtbo; [ -f /data/adb/.mcb_dtbo/stock.img ] && x=/data/adb/.mcb_dtbo
-  i=""; [ "$(cat $x/state$S 2>/dev/null)" = mod ] && [ -f $x/conf ] && read i _r < $x/conf
+dmax(){ S=$(getprop ro.boot.slot_suffix 2>/dev/null); x=/data/adb/mi_charge_boost/dtbo; for f in /data/adb/.mcb_dtbo/stock.img /data/adb/.mcb_dtbo/stock_?.img; do [ -f "$f" ] && { x=/data/adb/.mcb_dtbo; break; }; done
+  i=""; [ "$(cat $x/state$S 2>/dev/null)" = mod ] && { c=$x/conf$S; [ -f $c ] || c=$x/conf; [ -f $c ]; } && read i _r < $c
   case "$i" in ''|-|*[!0-9]*) i=${MI:-15500};; esac; [ $i -gt $REL ] && i=$REL; [ $i -lt $MIN ] && i=$MIN; echo $i; }
 # 断充温度上限跟随 DTBO 写入的满速/断充温度（未改 DTBO 为 58°C）
-tmax(){ S=$(getprop ro.boot.slot_suffix 2>/dev/null); x=/data/adb/mi_charge_boost/dtbo; [ -f /data/adb/.mcb_dtbo/stock.img ] && x=/data/adb/.mcb_dtbo
-  t=""; [ "$(cat $x/state$S 2>/dev/null)" = mod ] && [ -f $x/conf ] && read _i _v t _r < $x/conf
+tmax(){ S=$(getprop ro.boot.slot_suffix 2>/dev/null); x=/data/adb/mi_charge_boost/dtbo; for f in /data/adb/.mcb_dtbo/stock.img /data/adb/.mcb_dtbo/stock_?.img; do [ -f "$f" ] && { x=/data/adb/.mcb_dtbo; break; }; done
+  t=""; [ "$(cat $x/state$S 2>/dev/null)" = mod ] && { c=$x/conf$S; [ -f $c ] || c=$x/conf; [ -f $c ]; } && read _i _v t _r < $c
   case "$t" in ''|-|*[!0-9]*) t=58;; esac; [ $t -gt 58 ] && t=58; [ $t -lt 40 ] && t=40; echo $t; }
 MAX=$(dmax); DEF=$MAX; TMAX=$(tmax)
 node(){ for n in /sys/class/xm_power/charger/charger_thermal/wired_chg_curr \
     $(find -L /sys/class/xm_power -maxdepth 4 -name wired_chg_curr -type f 2>/dev/null); do
     [ -f "$n" ] && { echo $n; return; }; done; }
 online(){ cat /sys/class/power_supply/usb/online 2>/dev/null || echo 0; }
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
 conf(){ EN=0; MA=$DEF; [ -f $CONF ] && read EN MA < $CONF; [ "$EN" = 1 ] || EN=0
   case "$MA" in ''|*[!0-9]*) MA=$DEF;; esac; [ $MA -lt $MIN ] && MA=$MIN; [ $MA -gt $MAX ] && MA=$MAX; }
 # 实际生效的配置：充电中调节只改 $CONF / $D/cc_wall，拔出充电器 3 秒后由守护进程同步到 *_act

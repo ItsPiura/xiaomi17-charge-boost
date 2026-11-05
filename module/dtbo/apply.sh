@@ -12,7 +12,9 @@ MCB_ROOT=${H%/*}; . $MCB_ROOT/models.sh
 # 数据目录必须可写：移植系统上可能出现属主/SELinux 标签不对导致 Permission denied，先修复，修不好换备用目录
 okw(){ mkdir -p "$1" 2>/dev/null && touch "$1/.w" 2>/dev/null && rm -f "$1/.w"; }
 F=/data/adb/.mcb_dtbo
-if [ -z "$DTBO_D" ] && [ -f $F/stock.img ]; then D=$F
+S=$(getprop ro.boot.slot_suffix)
+hasbk(){ for f in "$1"/stock.img "$1"/stock_?.img; do [ -f "$f" ] && return 0; done; return 1; }   # 不含 stock.unclaimed.img / stock_?.old.img
+if [ -z "$DTBO_D" ] && hasbk $F; then D=$F
 elif ! okw $D; then
   R=${D%/dtbo}; chattr -R -i $R 2>/dev/null; chown -R 0:0 $R 2>/dev/null; chmod -R u+rwX,go+rX $R 2>/dev/null
   chcon -R u:object_r:adb_data_file:s0 $R 2>/dev/null
@@ -21,11 +23,46 @@ elif ! okw $D; then
     else echo "! 数据目录 $D 不可写（Permission denied）"; exit 1; fi
   fi
 fi
-S=$(getprop ro.boot.slot_suffix)
 BLK=/dev/block/by-name/dtbo$S; [ -e $BLK ] || BLK=/dev/block/bootdevice/by-name/dtbo$S
 [ -n "$DTBO_BLK" ] && BLK=$DTBO_BLK
 [ -e $BLK ] || { echo "! 找不到 dtbo 分区"; exit 1; }
-chmod 755 $H/dtbopatch
+# 多入口 dtbo（小米17 pudding 等 dt_entry_count>1）：原版 dtbopatch 遇到同一属性出现在多个 DT 入口
+# 会以 "appears N times, ambiguous" 中止，值变长时也不会重建 DT table；这里自动切换到内置 dtbopatch2
+# 安装时 Magisk/KernelSU 解压出来的二进制没有执行位，必须在使用前先 chmod（v8.6.4-pudding2 修正顺序）
+chmod 755 $H/dtbopatch 2>/dev/null; chmod 755 $H/dtbopatch2 2>/dev/null
+PATCHER=$H/dtbopatch
+EC=$(dd if=$BLK bs=1 skip=16 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n'); case "$EC" in ''|*[!0-9a-fA-F]*) EC=;; *) EC=$((0x$EC));; esac
+case "$EC" in ''|*[!0-9]*) EC=;; esac
+if [ -n "$EC" ] && [ "$EC" -gt 1 ]; then
+  if [ -x $H/dtbopatch2 ]; then PATCHER=$H/dtbopatch2
+  else echo "! 本机 dtbo 有 $EC 个 DT 入口，需要 dtbopatch2，但模块目录里没有它（或不可执行）"; rm -f $D/dtbo_fail
+       echo "dtbopatch2 缺失或不可执行（多入口 dtbo）" > $D/dtbo_fail 2>/dev/null; exit 1; fi
+fi
+# v8.6.4 起原版备份/参数/模板按槽位分开：备哪个槽就只还哪个槽，绝不把 A 槽的备份用到 B 槽
+ST=$D/stock$S.img; CF=$D/conf$S; TF=$D/tpl$S; SS=$D/stock_src$S
+sbk(){ dd if="$1" bs=4096 count=$2 2>/dev/null | sha256sum | cut -d' ' -f1; }
+slotblk(){ for b in /dev/block/by-name/dtbo$1 /dev/block/bootdevice/by-name/dtbo$1; do [ -e $b ] && { echo $b; return; }; done; }
+wrec(){ # $1=槽位：读有效写入记录到 w n，无记录/空/损坏返回 1
+  w=; n=; [ -f $D/written$1 ] || return 1; read w n < $D/written$1
+  [ -n "$w" ] || return 1; case "$n" in ""|*[!0-9]*) return 1;; esac; return 0; }
+owns(){ # $1=槽位：该槽有有效写入记录且分区内容与记录一致
+  if [ -n "$DTBO_BLK" ] && [ "$1" = "$S" ]; then b=$BLK; else b=$(slotblk $1); fi
+  [ -n "$b" ] || return 1
+  wrec $1 || return 1
+  [ "$(sbk $b $n)" = "$w" ]; }
+# 兼容旧版单份 stock.img（只在有槽位的机型上需要）：写入记录对得上哪个槽就归哪个槽；
+# 都对不上（OTA 刷新过，或写入记录丢了/坏了）分不清是哪种，一律隔离为 stock.unclaimed.img 保留，绝不删除
+# 原则：无法确认时只允许多留文件，不允许少文件，也不允许从分区反推原版
+if [ -n "$S" ] && [ -f $D/stock.img ]; then
+  to=; for x in $S _a _b; do [ -f $D/stock$x.img ] && continue; owns $x && { to=$x; break; }; done
+  if [ -n "$to" ]; then mv -f $D/stock.img $D/stock$to.img
+    for f in conf tpl stock_src; do [ -f $D/$f ] && [ ! -f $D/$f$to ] && mv -f $D/$f $D/$f$to; done
+    rm -f $D/conf $D/tpl $D/stock_src
+  else mv -f $D/stock.img $D/stock.unclaimed.img
+    for f in conf tpl stock_src; do [ -f $D/$f ] && mv -f $D/$f $D/$f.unclaimed; done
+  fi
+fi
+chmod 755 $H/dtbopatch 2>/dev/null; chmod 755 $H/dtbopatch2 2>/dev/null
 prep(){ # $1=I $2=T [$3=模板名]：Q: 行（按 OS3 重构的快充表，仅 dada.tpl 有）只在改了电流或温度时写入；{IQ}/{TQ} 未设定时用本机原厂上限 $MI/48
   iq=$1; [ "$iq" = - ] && iq=$MI; tq=$2; [ "$tq" = - ] && tq=48; tf=$H/${3:-$TPL}.tpl
   # 改了电流：全程按所选电流满速撑到本机 FFC 截止电压 $VQ（dada 4580，与 303 加速版一致）；没改电流：高压段保持原厂 16500/3780/4510
@@ -47,7 +84,7 @@ dropallow(){ # 没改电流/温度时旧布局的快充分段全部保持原厂
   grep -vE '^(Q:)?(mca_strategy_quick_charge	(temp_para[12]|(normal|ffc)_volt_para[12]_[23]|ffc_stage_para2_3|div_max_curr|div_single_curr)|mca_quick_charge_batt_para_gbl	[^	]+)	'; }
 isold(){ # $1=镜像：用完整模板试跑，快充表 _4 缺失即为旧布局（只有小米15 dada.tpl 有新旧两种布局）
   [ "$TPL" = dada ] || return 1
-  prep 15500 58 > $TMP/lay.tpl; DTBO_SET=I=15500,V=2700,T=58,L=48 $H/dtbopatch "$1" $TMP/lay.tpl - 2>&1 | grep -qE '^missing +mca_strategy_quick_charge/normal_volt_para1_4$'; }
+  prep 15500 58 > $TMP/lay.tpl; DTBO_SET=I=15500,V=2700,T=58,L=48 $PATCHER "$1" $TMP/lay.tpl - 2>&1 | grep -qE '^missing +mca_strategy_quick_charge/normal_volt_para1_4$'; }
 oldok(){ # $1=日志：旧布局下只有允许的属性不一致、没有缺失
   grep -qE "missing=0 " "$1" || return 1
   ! grep -E '^mismatch ' "$1" | grep -vqE "$ALLOW"; }
@@ -55,7 +92,7 @@ bestt(){ # 非原厂底包：在本机型各布局模板里试跑，选没有缺
   [ "$CODE" = dada ] && { echo dada; return; }
   bt=$DEFT; bm=99999
   for f in $(ls -r $H/${CODE}_*.tpl); do t=${f##*/}; t=${t%.tpl}; prep $I $T $t > $TMP/bt.tpl; cp $AVB $TMP/bt.avb
-    r=$(DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch "$1" $TMP/bt.tpl - 2>&1 | grep '^SUMMARY')
+    r=$(DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER "$1" $TMP/bt.tpl - 2>&1 | grep '^SUMMARY')
     case "$r" in *" missing=0 "*) m=${r#*mismatch=}; m=${m%% *}; [ "$m" -lt "$bm" ] && { bm=$m; bt=$t; };; esac
   done; echo $bt; }
 # ---- v8.5.9 逐项比对（未收录镜像 / 未适配机型）----
@@ -75,10 +112,10 @@ autobuild(){ # 输出到 $TMP/r.tpl
   for f in $(cands); do t=${f##*/}; t=${t%.tpl}; c=${t%%_*}; j=$((j+1))
     # 按模板所属机型展开（{IW}/{S}/{VQ} 等用该机型原厂参数，FFC 截止电压就是该机型原厂值）
     ( model_info $c >/dev/null 2>&1; TPL=$t; prep $I $T $t ) > $TMP/c$j.tpl
-    OL=0; [ "$t" = dada ] && ( TPL=dada; isold $D/stock.img ) && { OL=1
+    OL=0; [ "$t" = dada ] && ( TPL=dada; isold $ST ) && { OL=1
       if [ "$I$T" = "--" ]; then oldtpl < $TMP/c$j.tpl | dropallow > $TMP/c$j.x; else oldtpl < $TMP/c$j.tpl > $TMP/c$j.x; fi; mv $TMP/c$j.x $TMP/c$j.tpl; }
     cp $AVB $TMP/c$j.avb
-    DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $D/stock.img $TMP/c$j.tpl - > $TMP/c$j.st 2>&1
+    DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $ST $TMP/c$j.tpl - > $TMP/c$j.st 2>&1
     # 小米15 旧版快充表布局：与整包校验时相同，只有允许的属性原厂值不同且无缺失时，这些属性按新表覆盖
     [ $OL = 1 ] && oldok $TMP/c$j.st && { sed -E 's/^mismatch( +)(mca_strategy_quick_charge\/(temp_para[12]|(normal|ffc)_volt_para[12]_[23]|ffc_stage_para2_3|div_max_curr|div_single_curr)|mca_quick_charge_batt_para_gbl\/.*)$/patch\1\2/' $TMP/c$j.st > $TMP/c$j.x; mv $TMP/c$j.x $TMP/c$j.st; AFORCE=-force; }
     n=$(grep -cE '^(patch|done) ' $TMP/c$j.st); echo "$n $j $t" >> $TMP/score
@@ -98,12 +135,23 @@ autobuild(){ # 输出到 $TMP/r.tpl
   else echo "- 逐项比对：充电参数没有与已收录原厂值吻合的项"; fi
 }
 nb(){ echo $(( $(stat -c %s "$1") / 4096 )); }
-write(){ # 文件 -> 分区并校验
+write(){ # 文件 -> 分区并校验；校验失败立即回滚：先回写入前的分区内容，不行再回本槽原版备份
   n=$(nb "$1"); [ "$n" -gt 0 ] || { echo "! 文件为空"; return 1; }; want=$(sha "$1" $n)
+  pv=${TMP:-/dev}/prev$S.$$.img; dd if=$BLK of=$pv bs=1048576 2>/dev/null || pv=
   blockdev --setrw $BLK 2>/dev/null
   dd if="$1" of=$BLK bs=1048576 conv=fsync 2>/dev/null; sync
-  [ "$(sha $BLK $n)" = "$want" ] || { echo "! 写入校验失败"; return 1; }
-  echo "$want $n" > $D/written$S
+  if [ "$(sha $BLK $n)" = "$want" ]; then rm -f $pv; echo "$want $n" > $D/written$S; return 0; fi
+  if [ -n "$pv" ] && [ -s $pv ]; then pn=$(nb $pv); pw=$(sha $pv $pn)
+    dd if=$pv of=$BLK bs=1048576 conv=fsync 2>/dev/null; sync
+    [ "$(sha $BLK $pn)" = "$pw" ] && { rm -f $pv; echo "! 写入校验失败，已回滚到写入前的内容，分区未改动"; return 1; }
+  fi
+  rm -f $pv
+  if [ -f $ST ] && [ "$1" != $ST ]; then sn=$(nb $ST); sw=$(sha $ST $sn)
+    dd if=$ST of=$BLK bs=1048576 conv=fsync 2>/dev/null; sync
+    [ "$(sha $BLK $sn)" = "$sw" ] && { echo "$sw $sn" > $D/written$S; echo stock > $D/state$S
+      echo "! 写入校验失败，无法回到写入前的内容，已回滚为本槽原版 dtbo"; return 1; }
+  fi
+  echo "! 写入校验失败，回滚失败，dtbo 分区内容不确定：请勿重启，先手动刷回原厂 dtbo"; return 1
 }
 desc(){ # 把 dtbo 状态写进模块描述，模块列表里直接可见
   P=${H%/*}/module.prop; [ -f "$P" ] || return 0
@@ -115,33 +163,37 @@ desc(){ # 把 dtbo 状态写进模块描述，模块列表里直接可见
          if [ "$wt" -gt "$bt" ]; then t="⏳ DTBO 已写入 $v，重启生效"; else t="✅ DTBO 已生效 $v"; fi;;
     stock) if [ "$wt" -gt "$bt" ]; then t="⏳ DTBO 已还原原版，重启生效"; else t="DTBO 原版（未修改）"; fi;;
     changed) t="⚠️ DTBO 已被还原，之前的修改已失效";;
+    unknown) t="⚠️ DTBO 写入记录损坏，无法确认分区状态，请刷回原厂 dtbo 后重新应用";;
     *) t="DTBO 未修改";;
   esac
+  [ -f /data/adb/mi_charge_boost/dtbo_fail ] && [ "$1" != mod ] && t="❌ 未写入：$(cat /data/adb/mi_charge_boost/dtbo_fail) ｜ $t"
   m=$(cat /data/adb/mi_charge_boost/shutdown_mv 2>/dev/null)
   [ -n "$m" ] && [ "$m" != 0 ] && t="$t ｜ 低电量延迟关机 ${m}mV" || t="$t ｜ 低电量延迟关机 关"
   if [ "$(cat /data/adb/mi_charge_boost/pps 2>/dev/null)" = 1 ]; then
     if [ -d /data/adb/modules/FreePPS ] && [ ! -f /data/adb/modules/FreePPS/disable ]; then t="$t ｜ ⚡ 公版PPS 让给 FreePPS"
     else l=$(cat /data/adb/mi_charge_boost/pps_last 2>/dev/null); t="$t ｜ ⚡ 公版PPS 开（内置 FreePPS）${l:+（上次 ${l}W 头）}"; fi
   else t="$t ｜ 公版PPS 关"; fi
-  sed -i "s|^description=.*|description=$t ｜ 致谢：酷安@低线阻狂魔、酷安@花橋桥（PPS 节点）、内置 FreePPS（Seyud / 酷安@瓦力喀，GPL-3.0）|" "$P"
+  sed -i "s|^description=.*|description=$t ｜ 原模块 酷安@鱼楠 ｜ 致谢：酷安@低线阻狂魔、酷安@花橋桥（PPS 节点）、内置 FreePPS（Seyud / 酷安@瓦力喀，GPL-3.0）|" "$P"
 }
 case "$1" in
 desc) desc; exit 0;;
 fvq) # 本机原厂满充截止电压：优先读原厂备份，没有备份读当前分区
-  chmod 755 $H/dtbofv 2>/dev/null; if [ -f $D/stock.img ]; then $H/dtbofv probe $D/stock.img 2>/dev/null; else
+  chmod 755 $H/dtbofv 2>/dev/null; if [ -f $ST ]; then $H/dtbofv probe $ST 2>/dev/null; else
   t=/dev/mcb_fvq.$$; touch $t 2>/dev/null || t=$D/fvq.tmp; dd if=$BLK of=$t bs=1048576 2>/dev/null; $H/dtbofv probe $t 2>/dev/null; rm -f $t; fi; exit 0;;
 status)
-  [ -f $D/conf ] && read I V T Z P FV < $D/conf
+  [ -f $CF ] && read I V T Z P FV < $CF
   # 旧版 conf 第 6 项是 fv_hys（80/-），不是满充截止电压
   case "$FV" in 4[4-6][0-9][0-9]) ;; *) FV=-;; esac
-  if [ -f $D/written$S ]; then read W N < $D/written$S
-    if [ "$(sha $BLK $N)" = "$W" ]; then
-      if [ -f $D/conf ] && [ "$(cat $D/state$S 2>/dev/null)" = "mod" ]; then echo "mod $I $V ${T:-58} ${Z:--} ${P:--} ${FV:--}"; else echo "stock"; fi; exit 0; fi
-    rm -f $D/stock.img $D/stock_src $D/written$S $D/state$S; echo "changed $I $V ${T:-58}"; exit 0; fi
+  if [ -f $D/written$S ]; then
+    wrec "$S" || { echo "unknown $I $V ${T:-58}"; exit 0; }   # 记录损坏 ≠ 分区被替换，不动任何文件
+    if [ "$(sha $BLK $n)" = "$w" ]; then
+      if [ -f $CF ] && [ "$(cat $D/state$S 2>/dev/null)" = "mod" ]; then echo "mod $I $V ${T:-58} ${Z:--} ${P:--} ${FV:--}"; else echo "stock"; fi; exit 0; fi
+    # 分区被 OTA/其它工具改过：本槽旧备份改名 stock$S.old.img 留着（代价为零），之后按新分区重新备份
+    [ -f $ST ] && mv -f $ST $D/stock$S.old.img; rm -f $SS $CF $TF $D/written$S $D/state$S; echo "changed $I $V ${T:-58}"; exit 0; fi
   echo "none"; exit 0;;
 restore)
-  [ -f $D/stock.img ] || { echo "! 没有原版备份"; exit 1; }
-  write $D/stock.img || exit 1; echo stock > $D/state$S; rm -f $PF
+  [ -f $ST ] || { echo "! 没有原版备份"; exit 1; }
+  write $ST || exit 1; echo stock > $D/state$S; rm -f $PF
   echo "- 已写回原版 dtbo，重启生效"; desc; exit 0;;
 esac
 { read -r SI_N; read -r SI_D; read -r SI_O; read -r SI_B; } <<EOF
@@ -171,7 +223,19 @@ trap 'cd /; rm -rf $TMP' EXIT; cd /
 # 移植系统的 dtbo 可能没有 AVB 尾部：给每个模板配上原厂 AVB 模板（算法 NONE，只更新哈希）
 AVB=$H/$CODE.avb; [ -f $AVB ] || AVB=$H/dada.avb
 for n in r chk lay; do cp $AVB $TMP/$n.avb; done
-if [ ! -f $D/stock.img ]; then
+# 本槽标记为已修改却没有本槽原版备份：只有确认分区已被 OTA/其它工具刷新（有效写入记录且与分区不符）才重新备份，
+# 否则（分区仍是本模块写的，或写入记录缺失/损坏）中止，绝不拿当前分区顶替原版
+if [ ! -f $ST ] && [ "$(cat $D/state$S 2>/dev/null)" = mod ]; then
+  if wrec "$S" && [ "$(sha $BLK $n)" != "$w" ]; then
+    [ -f $D/stock.unclaimed.img ] && echo "- 旧版原版备份无法确认归属，已隔离保留为 $D/stock.unclaimed.img"
+    echo "- 本槽 dtbo 已被系统更新或其它工具刷新，按新分区重新备份"; rm -f $D/written$S $D/state$S
+  else
+    echo "! 本槽标记为已修改，但没有可确认的原版备份，已中止（避免把修改版当成原版）。请先刷回本槽原厂 dtbo 后再应用"
+    [ -f $D/stock.unclaimed.img ] && echo "! 旧版原版备份已隔离保留：$D/stock.unclaimed.img"
+    rm -rf $TMP; exit 1
+  fi
+fi
+if [ ! -f $ST ]; then
   dd if=$BLK of=$TMP/cur.img bs=1048576 2>/dev/null
   [ "$(head -c 4 $TMP/cur.img | od -An -tx1 | tr -d ' \n')" = d7b7ab1e ] || { echo "! 当前 dtbo 分区不是 DT table 格式"; exit 1; }
   HS=$(hsha $TMP/cur.img); KV=; TP=; [ -n "$HS" ] && { set -- $(grep "^$HS " $H/stock.list 2>/dev/null | head -1); }
@@ -184,38 +248,39 @@ if [ ! -f $D/stock.img ]; then
   [ "$CODE" = dada ] || U=/nonexistent
   if [ -z "$KV" ] && [ -n "$HS" ] && [ -f "$U" ]; then
     # 已收录的“预改”dtbo（移植包自带改过的充电参数）：先还原成对应原厂值，比对通过才当作原厂备份
-    cp $TMP/cur.img $D/orig_port.img 2>/dev/null
+    cp $TMP/cur.img $D/orig_port$S.img 2>/dev/null
     cp $H/dada.avb $TMP/u.avb; cp "$U" $TMP/u.rules; TP=dada
-    if $H/dtbopatch $TMP/cur.img $TMP/u.rules $TMP/un.img > $TMP/un.log 2>&1 && prep 15500 58 dada > $TMP/chk.tpl && DTBO_SET=I=15500,V=2700,T=58,L=48 $H/dtbopatch $TMP/un.img $TMP/chk.tpl - > $TMP/chk.log 2>&1 && grep -q "done=0 mismatch=0 missing=0" $TMP/chk.log; then
+    if $PATCHER $TMP/cur.img $TMP/u.rules $TMP/un.img > $TMP/un.log 2>&1 && prep 15500 58 dada > $TMP/chk.tpl && DTBO_SET=I=15500,V=2700,T=58,L=48 $PATCHER $TMP/un.img $TMP/chk.tpl - > $TMP/chk.log 2>&1 && grep -q "done=0 mismatch=0 missing=0" $TMP/chk.log; then
       l=$(sed -n '1s/^# *//p' "$U"); KV="${l%%：*}（预改参数已还原为 OS4.0.0.19 原厂值）"; mv $TMP/un.img $TMP/cur.img
     else echo "! 预改 dtbo 还原失败：$(grep -E 'ERROR|SUMMARY' $TMP/un.log $TMP/chk.log 2>/dev/null | tail -1)"; exit 1; fi
   fi
   if [ -n "$KV" ]; then
-    cp $TMP/cur.img $D/stock.img && [ "$(sha $D/stock.img 1)" = "$(sha $TMP/cur.img 1)" ] || { echo "! 原版备份写入 $D 失败"; exit 1; }
-    rm -f $D/stock_src; echo "$CODE $TP" > $D/tpl
-    echo "- 哈希匹配原厂 $KV dtbo，已备份 → $D/stock.img"
+    cp $TMP/cur.img $ST && [ "$(sha $ST 1)" = "$(sha $TMP/cur.img 1)" ] || { echo "! 原版备份写入 $D 失败"; exit 1; }
+    rm -f $SS; echo "$CODE $TP" > $TF
+    echo "- 哈希匹配原厂 $KV dtbo，已备份 → $ST"
   else
     # v8.5.9：不做整包哈希校验。未收录的镜像（官改包、新版本、未适配机型）直接备份当前分区，写入时逐项比对原厂值
-    cp $TMP/cur.img $D/stock.img && [ "$(sha $D/stock.img 1)" = "$(sha $TMP/cur.img 1)" ] || { echo "! 当前 dtbo 备份写入 $D 失败"; exit 1; }
-    echo cur > $D/stock_src; echo "$CODE auto" > $D/tpl
-    echo "- 不是本机型已收录的原厂 dtbo（头部哈希 ${HS:-无法读取}），已备份当前分区 → $D/stock.img，按逐项比对写入"
+    cp $TMP/cur.img $ST && [ "$(sha $ST 1)" = "$(sha $TMP/cur.img 1)" ] || { echo "! 当前 dtbo 备份写入 $D 失败"; exit 1; }
+    echo cur > $SS; echo "$CODE auto" > $TF
+    echo "- 不是本机型已收录的原厂 dtbo（头部哈希 ${HS:-无法读取}），已备份当前分区 → $ST，按逐项比对写入"
   fi
 else
-  [ "$(cat $D/stock_src 2>/dev/null)" = cur ] && echo "- 已有当前 dtbo 备份（未收录镜像），沿用 $D/stock.img" || echo "- 已有原厂备份，沿用 $D/stock.img"
+  [ "$(cat $SS 2>/dev/null)" = cur ] && echo "- 已有当前 dtbo 备份（未收录镜像），沿用 $ST" || echo "- 已有原厂备份，沿用 $ST"
 fi
-# 备份对应的模板：v8.4.9 起备份时记在 $D/tpl（"代号 模板"）；旧版本的备份只可能来自小米15 → dada.tpl
-TPL=; if [ -f $D/tpl ]; then read c t < $D/tpl
+# 备份对应的模板：v8.4.9 起备份时记在 tpl（v8.6.4 起按槽 tpl$S，"代号 模板"）；旧版本的备份只可能来自小米15 → dada.tpl
+TPL=; if [ -f $TF ]; then read c t < $TF
   [ "$c" = "$CODE" ] || { echo "! 已有的 dtbo 备份属于 $c，与本机 $CODE 不符，请先删除 $D 后重试"; rm -rf $TMP; exit 1; }; TPL=$t
 else
-  set -- $(grep "^$(hsha $D/stock.img) " $H/stock.list 2>/dev/null | head -1)
+  set -- $(grep "^$(hsha $ST) " $H/stock.list 2>/dev/null | head -1)
   if [ -n "$2" ]; then [ "$2" = "$CODE" ] || { echo "! 已有的 dtbo 备份是 $2 的原厂镜像，与本机 $CODE 不符"; rm -rf $TMP; exit 1; }; TPL=$3
   else TPL=auto; fi
-  echo "$CODE $TPL" > $D/tpl
+  echo "$CODE $TPL" > $TF
 fi
 # 未收录镜像（含 v8.2.9–8.5.8「以当前镜像为底」的旧备份）一律逐项比对
-[ "$(cat $D/stock_src 2>/dev/null)" = cur ] && TPL=auto
+[ "$(cat $SS 2>/dev/null)" = cur ] && TPL=auto
 [ "$TPL" = auto ] || [ -f $H/$TPL.tpl ] || { echo "! 缺少模板 $TPL.tpl"; rm -rf $TMP; exit 1; }
 case "$TPL" in auto) ;; dada) ;; *) echo "- 机型模板: $TPL（快充/温控表按本机原厂值，FFC 截止电压 ${VQ}mV 不改）";; esac
+[ "$PATCHER" = "$H/dtbopatch2" ] && echo "- 本机 dtbo 有 $EC 个 DT 入口（多入口镜像），用内置 dtbopatch2 写入"
 : > $TMP/r.tpl
 FORCE=
 if [ "$TPL" = auto ]; then
@@ -227,21 +292,21 @@ else
 [ "$I$V$T" = "---" ] || prep $I $T >> $TMP/r.tpl
 [ "$Z" = 165 ] && { cat $H/hz165.tpl >> $TMP/r.tpl; echo "- 屏幕超频：添加 132/144/155/165Hz timing"; }
 fi
-if [ "$TPL" != auto ] && isold $D/stock.img && [ -s $TMP/r.tpl ]; then
+if [ "$TPL" != auto ] && isold $ST && [ -s $TMP/r.tpl ]; then
   if [ "$I$T" = "--" ]; then oldtpl < $TMP/r.tpl | dropallow > $TMP/r2.tpl; echo "- 旧版快充表布局：未改电流/温度，快充表保持原厂"
   else oldtpl < $TMP/r.tpl > $TMP/r2.tpl; echo "- 旧版快充表布局：升流步进保持原厂，按新表覆盖快充分段"; fi
   mv $TMP/r2.tpl $TMP/r.tpl
-  DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $D/stock.img $TMP/r.tpl - > $TMP/dry 2>&1
+  DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $ST $TMP/r.tpl - > $TMP/dry 2>&1
   [ -n "$FORCE" ] || { oldok $TMP/dry && FORCE=-force; }
 fi
 if [ -s $TMP/r.tpl ]; then
-  DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $D/stock.img $TMP/r.tpl $TMP/new.img $FORCE > $TMP/log 2>&1
+  DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $ST $TMP/r.tpl $TMP/new.img $FORCE > $TMP/log 2>&1
   rc=$?; grep -E "SUMMARY|ERROR|missing " $TMP/log
   [ $rc = 4 ] && [ "$Z" = 165 ] && grep -q "missing  *+" $TMP/log && echo "! 没找到华星 o3_42 屏幕节点，此机型/屏幕不支持超频"
 else
-  cp $D/stock.img $TMP/new.img; rc=0
+  cp $ST $TMP/new.img; rc=0
 fi
-[ $rc = 2 ] && [ "$TPL" = auto ] && { cp $D/stock.img $TMP/new.img; rc=0; echo "- 所选数值与当前 dtbo 一致"; }
+[ $rc = 2 ] && [ "$TPL" = auto ] && { cp $ST $TMP/new.img; rc=0; echo "- 所选数值与当前 dtbo 一致"; }
 [ $rc = 0 ] || { echo "! 生成失败，分区未改动"; rm -rf $TMP; exit 1; }
 if [ "$FV" != - ]; then
   # 满充截止电压（v8.6.4）：dtbofv 读本机镜像实际值生成规则，旧值即当前值，按普通模式写入（不 -force）
@@ -252,7 +317,7 @@ if [ "$FV" != - ]; then
   elif [ $vrc != 0 ]; then grep ERROR $TMP/fvs; echo "! 满充截止电压规则生成失败，分区未改动"; rm -rf $TMP; exit 1
   elif [ -s $TMP/fv.tpl ]; then
     cp $AVB $TMP/fv.avb
-    DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $TMP/new.img $TMP/fv.tpl $TMP/new6.img > $TMP/fvlog 2>&1; vrc=$?
+    DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $TMP/new.img $TMP/fv.tpl $TMP/new6.img > $TMP/fvlog 2>&1; vrc=$?
     if [ $vrc = 0 ] && [ -s $TMP/new6.img ]; then mv $TMP/new6.img $TMP/new.img; echo "- 满充截止电压：原厂 ${vq0}mV → ${FV}mV（$(grep -c . $TMP/fv.tpl) 项）"
     else grep -E "SUMMARY|ERROR|mismatch |missing " $TMP/fvlog; echo "! 满充截止电压写入失败，分区未改动"; rm -rf $TMP; exit 1; fi
   else echo "- 满充截止电压：${FV}mV 与原厂相同，保持原厂"; FV=-; fi
@@ -263,7 +328,7 @@ if [ "$PW" != - ]; then
   # K90 至尊版另有 strategy_quick_charge_override（含 max_power），存在就一起改
   [ "$CODE" = warsaw ] && printf '?strategy_quick_charge_override\tmax_power\t000186a0\tw\t%s\n' ${PW}000 >> $TMP/p.tpl
   cp $AVB $TMP/p.avb
-  DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $TMP/new.img $TMP/p.tpl $TMP/new2.img -force > $TMP/plog 2>&1; prc=$?
+  DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $TMP/new.img $TMP/p.tpl $TMP/new2.img -force > $TMP/plog 2>&1; prc=$?
   grep -E "SUMMARY|ERROR|missing " $TMP/plog
   if [ $prc = 0 ] && ! grep -q "^missing " $TMP/plog; then mv $TMP/new2.img $TMP/new.img; echo "- 小米私有协议：${PW}W"
   else echo "! 协议功率节点写入失败，分区未改动"; rm -rf $TMP; exit 1; fi
@@ -273,7 +338,7 @@ HV=1
 # 逐项比对模式下保持本机当前值（未适配机型的原厂值未必是 1）
 if [ "$TPL" = auto ] && [ "$FH" != 80 ]; then FH=-; else
 printf 'mca_strategy_quick_charge\tquick_chg_fv_hys\t00000001\tw\t%s\n' $HV > $TMP/f.tpl; cp $AVB $TMP/f.avb
-DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $TMP/new.img $TMP/f.tpl $TMP/new3.img -force > $TMP/flog 2>&1; frc=$?
+DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $TMP/new.img $TMP/f.tpl $TMP/new3.img -force > $TMP/flog 2>&1; frc=$?
 if [ $frc = 4 ] || grep -q "^missing " $TMP/flog; then FH=-
 elif [ $frc = 0 ] && [ -s $TMP/new3.img ]; then mv $TMP/new3.img $TMP/new.img
 elif [ $frc = 2 ]; then :
@@ -282,7 +347,7 @@ fi
 # 循环降压（v8.6.2）：drop_fv_cycle 三处写 0（属性存在即覆盖；OS3 原厂 301，OS4 原厂即为 0）；
 # drop_fcc_para 循环门槛全部改 65535、降流值不动（只认已收录的原厂布局，其它布局保持本机原样）
 printf '?mca_strategy_buckchg_class\tdrop_fv_cycle\t0000012d\tw\t0\n?mca_strategy_quick_charge\tdrop_fv_cycle\t0000012d\tw\t0\n?strategy-fg\tdrop_fv_cycle\t0000012d\tw\t0\n' > $TMP/cy.tpl; cp $AVB $TMP/cy.avb
-DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $TMP/new.img $TMP/cy.tpl $TMP/new4.img -force > $TMP/cylog 2>&1; crc=$?
+DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $TMP/new.img $TMP/cy.tpl $TMP/new4.img -force > $TMP/cylog 2>&1; crc=$?
 cyn=$(grep -cE '^(patch|mismatch) ' $TMP/cylog); cyd=$(grep -c '^done ' $TMP/cylog)
 if [ $crc = 0 ] || [ $crc = 2 ]; then
   [ $cyn -gt 0 ] && [ -s $TMP/new4.img ] && mv $TMP/new4.img $TMP/new.img
@@ -295,7 +360,7 @@ for c in "34303000353030003830300031303030003635353335003135303000 65535|500|655
          "333030003530300034303000353030003830300031303030003635353335003135303000 65535|500|65535|500|65535|1000|65535|1500" \
          "33303000300038303000353030003635353335003130303000 65535|0|65535|500|65535|1000"; do
   printf 'mca_strategy_quick_charge\tdrop_fcc_para\t%s\ts\t%s\n' ${c% *} ${c#* } > $TMP/fc.tpl; cp $AVB $TMP/fc.avb
-  DTBO_SET=I=$I,V=$V,T=$T,L=$L $H/dtbopatch $TMP/new.img $TMP/fc.tpl $TMP/new5.img > $TMP/fclog 2>&1; fc=$?
+  DTBO_SET=I=$I,V=$V,T=$T,L=$L $PATCHER $TMP/new.img $TMP/fc.tpl $TMP/new5.img > $TMP/fclog 2>&1; fc=$?
   if [ $fc = 0 ] && [ -s $TMP/new5.img ]; then mv $TMP/new5.img $TMP/new.img; fcr=ok; echo "- 循环降流 drop_fcc_para：门槛改为 65535（${c#* }）"; break
   elif [ $fc = 2 ]; then fcr=ok; echo "- 循环降流 drop_fcc_para：已是 65535"; break
   elif [ $fc = 4 ]; then fcr=none; break
@@ -305,7 +370,7 @@ done
 [ $fcr = none ] && echo "- 本机 dtbo 没有 drop_fcc_para，跳过"
 [ $fcr = miss ] && echo "- drop_fcc_para 不是已收录的原厂布局，保持本机原样"
 write $TMP/new.img || { rm -rf $TMP; exit 1; }
-echo "$I $V $T $Z $PW $FV" > $D/conf; echo mod > $D/state$S
+echo "$I $V $T $Z $PW $FV" > $CF; echo mod > $D/state$S; rm -f $D/dtbo_fail
 rm -rf $TMP
 f(){ [ "$1" = - ] && echo 不修改 || echo "$1$2"; }
 desc

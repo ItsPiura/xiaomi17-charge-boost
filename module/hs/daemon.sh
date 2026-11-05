@@ -7,7 +7,7 @@ until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 3; done
 if [ -f $D/hs.pid ] && kill -0 $(cat $D/hs.pid) 2>/dev/null; then exit 0; fi
 echo $$ > $D/hs.pid
 X=/sys/class/xm_power
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
 SN=""; for n in $X/charger/charge_interface/input_suspend /sys/class/power_supply/battery/input_suspend; do [ -f $n ] && { SN=$n; break; }; done
 last=0; t0=0; tries=0
 while true; do

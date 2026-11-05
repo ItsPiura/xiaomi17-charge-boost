@@ -3,7 +3,7 @@
 # MN 机型名  MI 原厂快充电流(mA)  MX 模块允许的电流上限  SC 单电荷泵分支上限(div_single_curr)
 # VQ 满电 FFC 截止电压(mV，模块不改，只用于重构表/显示)  V0 原厂关机电压  PW0 原厂私有协议功率  PWO 可选协议功率
 # HZ 1=支持屏幕超频 165Hz/高刷切换（只有小米15 华星 o3_42 屏）  DEFT 非原厂底包时用的模板
-MODELS="dada haotian miro annibale warsaw"
+MODELS="dada haotian miro annibale warsaw pudding"
 model_info(){
   case "$1" in
     dada)     MN=小米15;          MI=15500; MX=20500; SC=20000; VQ=4580; V0=3050; PW0=90;  PWO="100 120"; HZ=1; DEFT=dada;;
@@ -11,6 +11,7 @@ model_info(){
     miro)     MN="红米K80 Pro";   MI=20500; MX=22000; SC=20500; VQ=4550; V0=3050; PW0=120; PWO="";        HZ=0; DEFT=miro_os4;;
     annibale) MN=红米K90;         MI=17600; MX=20500; SC=20000; VQ=4550; V0=2850; PW0=100; PWO="120";     HZ=0; DEFT=annibale_os4;;
     warsaw)   MN=红米K90至尊版;   MI=17600; MX=20500; SC=20000; VQ=4560; V0=2850; PW0=100; PWO="120";     HZ=0; DEFT=warsaw_os4b;;
+    pudding)  MN=小米17;         MI=18400; MX=20500; SC=20000; VQ=4580; V0=3030; PW0=100; PWO="";        HZ=0; DEFT=pudding_os4;;
     *) return 1;;
   esac
   MODNAME="${MN}充电加速模块"; return 0
@@ -23,7 +24,7 @@ model_load(){
   MI=15500; MX=20500; SC=20000; VQ=0; V0=3000; PW0=0; PWO=""; HZ=0; DEFT=""
   MODNAME="${MN}充电加速模块"; return 0
 }
-model_names(){ echo "小米15 / 小米15 Pro / 红米K80 Pro / 红米K90 / 红米K90至尊版"; }
+model_names(){ echo "小米15 / 小米15 Pro / 红米K80 Pro / 红米K90 / 红米K90至尊版 / 小米17"; }
 # 识别机型代号：sysinfo.sh（移植系统优先读 vendor/odm）→ 其它属性 → 分区 build.prop
 detect_code(){
   c=$(sh ${MCB_ROOT:-${0%/*}}/sysinfo.sh 2>/dev/null | sed -n 2p)

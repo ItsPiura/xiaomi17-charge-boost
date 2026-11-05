@@ -171,7 +171,7 @@ input[type=range]{width:100%;accent-color:#2b5cff;margin:6px 0 2px}
 </head>
 <body>
 <button id="thm" aria-label="切换主题"></button><button id="gear" aria-label="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-<div class="hd"><div class="sub" style="padding-right:44px;margin-bottom:2px">作者：酷安@鱼楠</div><h1 id="dev">读取设备中…</h1>
+<div class="hd"><div class="sub" style="padding-right:44px;margin-bottom:2px">作者：酷安@不事Piura</div><h1 id="dev">读取设备中…</h1>
 <div class="sub" id="devsub"></div>
 <div class="err" id="err"></div></div>
 <div id="vp"><div id="track">
@@ -252,7 +252,7 @@ input[type=range]{width:100%;accent-color:#2b5cff;margin:6px 0 2px}
 <input type="range" id="dzf" min="4490" max="4650" step="10" value="4580"><div class="rg"><span>4490</span><span id="dzf0">原厂 4580 mV</span><span>4650 mV</span></div>
 </div><div style="font-size:11px;color:var(--sub)">关闭时不改满充截止电压（保持原厂），滑块置灰防误触。打开后按设定值调整 FFC 截止电压，默认本机原厂值；调高可多充一点电量，但电池老化更快</div></div>
 <div class="it" id="dzzr"><div class="hd"><span>屏幕超频</span><span id="dzzb" style="display:flex;gap:6px"><button data-z="165" style="padding:4px 12px;font-size:12px;border-radius:999px">165Hz</button><button data-z="-" style="padding:4px 12px;font-size:12px;border-radius:999px">不超频</button></span></div>
-<div style="font-size:11px;color:var(--sub)">华星屏添加 132/144/155/165Hz 档位</div></div>
+<div style="font-size:11px;color:var(--sub)">华星屏添加 132/144/156/165Hz 档位</div></div>
 <div style="font-size:11px;color:var(--sub);padding:8px 0 0">各项默认本机原厂值，等于原厂值的项保持原厂不改。设定温度以下满速，超过即停充。写入 dtbo 并重算 AVB，重启后生效；原版自动备份。</div>
 <div class="bt"><button class="w" id="dzok">写入（重启生效）</button><button class="w red" id="dzrst">还原原版</button></div>
 <pre id="dzlog" style="font-size:11px;white-space:pre-wrap;margin:8px 0 0;color:var(--sub)" hidden></pre>
@@ -328,7 +328,7 @@ input[type=range]{width:100%;accent-color:#2b5cff;margin:6px 0 2px}
 <div class="card"><div class="hzc"><div class="big" id="hzcur">--<small>Hz</small></div><span class="hzt" id="hzst">读取中</span></div>
 <div style="font-size:12px;color:var(--sub);margin-top:8px" id="hzmeta">目标 -- Hz</div></div>
 <div class="card hzm" id="fpgo"><div><b>实时刷新率检测</b><i>通过连续帧时间检测实际获得的刷新率</i></div><span>›</span></div>
-<div class="card"><div style="font-size:12px;color:var(--sub);margin-bottom:8px">点选档位，超频档自动逐级切换；120 = 交还系统调度</div>
+<div class="card"><div style="font-size:12px;color:var(--sub);margin-bottom:8px">点选档位，超频档自动逐级切换；120 = 锁定 120（关掉开关才交还系统调度）</div>
 <div class="hzg" id="hzg"></div>
 <div style="font-size:11px;color:var(--sub);margin-top:8px" id="hzna" hidden>当前 dtbo 没有超频档位：在「充电配置」选 165Hz 写入并重启后可用</div></div>
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:14px">切换过程</b><button id="hzrl" style="border:0;background:none;color:#2b5cff;padding:0;font-size:13px">刷新</button></div><details class="pplg" style="margin-top:0"><summary>内核日志</summary><pre class="hzp" id="hzlog" style="margin-top:4px">--</pre></details></div>
@@ -965,7 +965,7 @@ const dzArg=()=>{const i=dzSet('dzi',$('dzin').value),t=dzSet('dzt',$('dztn').va
   return {i:i==MDL.istock?'-':i,v:v,t:t==DZT0?'-':t,f:f==MDL.fv0?'-':f};};
 async function dtStat(){const r=await exec('sh '+DT+' status');const a=r.stdout.trim().split(' ').map(x=>x==='-'?'原厂':x);
   const raw=r.stdout.trim().split(' ');if(raw[0]==='mod')dzZ(raw[4]||'-');
-  T('dzst',a[0]==='mod'?'✅ 已应用 '+a[1]+'mA / '+a[2]+'mV / '+(a[3]||58)+'°C'+(raw[4]==='165'?' / 165Hz':'')+(raw[5]&&raw[5]!=='-'?' / 协议 '+raw[5]+'W':'')+(raw[6]&&raw[6]!=='-'?' / 满充 '+raw[6]+'mV':''):a[0]==='stock'?'原版':a[0]==='changed'?'⚠️ dtbo 已还原，请重新写入':'未修改');
+  T('dzst',a[0]==='mod'?'✅ 已应用 '+a[1]+'mA / '+a[2]+'mV / '+(a[3]||58)+'°C'+(raw[4]==='165'?' / 165Hz':'')+(raw[5]&&raw[5]!=='-'?' / 协议 '+raw[5]+'W':'')+(raw[6]&&raw[6]!=='-'?' / 满充 '+raw[6]+'mV':''):a[0]==='stock'?'原版':a[0]==='changed'?'⚠️ dtbo 已还原，请重新写入':a[0]==='unknown'?'⚠️ 写入记录损坏，无法确认分区状态，请刷回原厂 dtbo 后重新应用':'未修改');
   if(a[0]==='mod'||a[0]==='changed'){$('dzi').dataset.set=1;const st=(x,d)=>(x&&x!=='-'&&x!=='原厂')?x:d;
     dzSet('dzi',st(raw[1],MDL.istock));const vm=st(raw[2],'');dzVon(!!vm);dzSet('dzv',vm||MDL.v0);dzSet('dzt',st(raw[3],DZT0));
     const fm=a[0]==='mod'?st(raw[6],''):'';const fok=+fm>=4490&&+fm<=4650;dzFon(fok);if(MDL.fv0)dzSet('dzf',fok?fm:MDL.fv0);}}
@@ -1003,14 +1003,14 @@ $('dzsx').onclick=()=>$('dzs').classList.remove('on');
 $('dzs').onclick=e=>{if(e.target.id==='dzs')$('dzs').classList.remove('on');};
 /* ---------- 高刷切换 ---------- */
 const HZ=MOD+'/hz/hz.sh';
-const HZL=[[120,'系统默认'],[132,'Hz'],[144,'Hz'],[156,'Hz'],[165,'最高']];
+const HZL=[[120,'锁定'],[132,'Hz'],[144,'Hz'],[156,'Hz'],[165,'最高']];
 let hzBusy=false,hzTgt=120,hzRun=false,hzAv=-1,hzOn=true;
 function hzDraw(){const g=$('hzg');g.innerHTML='';HZL.forEach(l=>{const b=document.createElement('button');
   b.className=l[0]==hzTgt?'on':'';b.disabled=!hzOn||hzBusy||(l[0]>120&&hzAv===0);b.innerHTML=l[0]+'<span>'+l[1]+'</span>';b.onclick=()=>hzSet(l[0]);g.appendChild(b);});
   $('hzna').hidden=hzAv!==0;$('hzg').style.opacity=hzOn?'':'.45';$('hzon').checked=hzOn;$('hzon').disabled=hzBusy||hzRun;}
 async function hzStat(){const r=await exec('sh '+HZ+' status');
   try{const j=JSON.parse(r.stdout.trim().split('\n').pop());hzBusy=j.busy==1;hzTgt=j.target;hzAv=j.avail;hzOn=j.on!==0;
-    $('hzcur').innerHTML=(j.cur||'--')+'<small>Hz</small>';const st=$('hzst');
+    $('hzcur').innerHTML=(j.cur>0?j.cur:'--')+'<small>Hz</small>';const st=$('hzst');
     if(hzBusy){st.textContent='切换中…';st.className='hzt bz';}
     else if(!hzOn){st.textContent='已关闭 · 系统调度';st.className='hzt';}
     else if(j.cur==0){st.textContent='等待开机完成';st.className='hzt';}

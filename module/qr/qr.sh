@@ -5,7 +5,7 @@
 QD=${0%/*}; MD=${QD%/qr}
 D=/data/adb/mi_charge_boost; mkdir -p $D
 CONF=$D/qc_retry; LOG=$D/qr.log; P=/sys/module/mi_qc_retry/parameters
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
 want(){ [ "$(cat $CONF 2>/dev/null)" = 1 ] && echo 1 || echo 0; }
 avail(){ [ -d /sys/module/mca_strategy_quickchg ] && echo 1 || echo 0; }
 pv(){ cat $P/$1 2>/dev/null || echo 0; }

@@ -9,7 +9,7 @@ node(){
   done
 }
 online(){ cat /sys/class/power_supply/usb/online 2>/dev/null || echo 0; }
-log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
+log(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 200 ] && sed -i '1,100d' $LOG; }
 apply(){ # 按配置写节点；在线时先 0 后 1，复位驱动内部状态
   N=$(node); [ -z "$N" ] && return 1
   W=$(cat $CONF 2>/dev/null); [ "$W" = 1 ] || W=0

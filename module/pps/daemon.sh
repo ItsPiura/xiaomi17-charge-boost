@@ -12,7 +12,7 @@ MODDIR=${0%/*}; P=$MODDIR/pps.sh; D=${PPS_DATA:-/data/adb/mi_charge_boost}; S0=$
 MODROOT=${MODDIR%/pps}; F=$D/freepps
 BIN=${PPS_BIN:-$MODDIR/FreePPS}; MODS=${PPS_MODS:-/data/adb/modules}
 LOG=$D/pps.log
-lg(){ echo "$(date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 300 ] && sed -i '1,150d' $LOG; }
+lg(){ echo "$(date '+%m-%d %H:%M:%S' 2>/dev/null || /system/bin/toybox date '+%m-%d %H:%M:%S') $*" >> $LOG; [ $(wc -l < $LOG) -gt 300 ] && sed -i '1,150d' $LOG; }
 
 # 同 FreePPS service.sh 的 wait_until_login
 wait_until_login() {
@@ -30,6 +30,8 @@ wait_until_login() {
 [ -n "$PPS_TEST" ] || wait_until_login
 
 mkdir -p $D $F
+# 旧版偶发写出没有时间戳的行，WebUI 排序时会一直顶在最前，清掉
+[ -f $LOG ] && sed -i '/^[0-9][0-9]-[0-9][0-9] [0-9]/!d' $LOG 2>/dev/null
 if [ -f $D/pps.pid ] && kill -0 $(cat $D/pps.pid) 2>/dev/null && [ "$(cat $D/pps.pid)" != $$ ]; then exit 0; fi
 echo $$ > $D/pps.pid
 # FreePPS 会在自己的 module.prop 描述前加状态前缀，这里给它一个占位文件，不碰本模块的 module.prop
